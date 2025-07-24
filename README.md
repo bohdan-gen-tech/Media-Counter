@@ -9,7 +9,7 @@ This tool is designed for developers, QA engineers, and content analysts to quic
 
 The script counts and categorizes all media into logical groups:
 1. **On Screen:** Counts media currently visible in the viewport, updating in real-time as you scroll.
-2. **Hidden on Page:** Counts rendered <img> and <video> tags that are currently invisible (e.g., hidden by CSS, outside the viewport, or used for hover effects).
+2. **Hidden on Page:** Counts rendered img and video tags that are currently invisible (e.g., hidden by CSS, outside the viewport, or used for hover effects).
 3. **All on Page:** A sum of all rendered media (On Screen + Hidden).
 4. **Alternative Sources (srcset):** Finds and counts all unique image URLs provided in srcset attributes, which are used for responsive design.
 5. **Preloaded:** Counts resources being fetched in the background via <link rel="preload">, which affect load time but are not rendered on the page.
