@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Media Counter
 // @namespace    http://tampermonkey.net/
-// @version      2025.07.24.1
+// @version      2025.07.24.2
 // @description  This script analyzes web pages to display an interactive panel counting all visible, hidden, and preloaded media, letting you view their links.
 // @author       Bohdan S.
 // @match        *://*/*
