@@ -5,21 +5,21 @@ This tool is designed for developers, QA engineers, and content analysts to quic
 
 ## ✅ Features
 
-Comprehensive Media Breakdown
+**Comprehensive Media Breakdown**
 
 The script counts and categorizes all media into logical groups:
-On Screen: Counts media currently visible in the viewport, updating in real-time as you scroll.
-Hidden on Page: Counts rendered <img> and <video> tags that are currently invisible (e.g., hidden by CSS, outside the viewport, or used for hover effects).
-All on Page: A sum of all rendered media (On Screen + Hidden).
-Alternative Sources (srcset): Finds and counts all unique image URLs provided in srcset attributes, which are used for responsive design.
-Preloaded: Counts resources being fetched in the background via <link rel="preload">, which affect load time but are not rendered on the page.
-Sub-Categories: Provides a separate count for media containing pre-gen in their URL across all relevant categories.
+**On Screen:** Counts media currently visible in the viewport, updating in real-time as you scroll.
+**Hidden on Page:** Counts rendered <img> and <video> tags that are currently invisible (e.g., hidden by CSS, outside the viewport, or used for hover effects).
+**All on Page:** A sum of all rendered media (On Screen + Hidden).
+**Alternative Sources (srcset):** Finds and counts all unique image URLs provided in srcset attributes, which are used for responsive design.
+**Preloaded:** Counts resources being fetched in the background via <link rel="preload">, which affect load time but are not rendered on the page.
+**Sub-Categories:** Provides a separate count for media containing pre-gen in their URL across all relevant categories.
 
-Instant Link Discovery
+**Instant Link Discovery**
 
-Hover Tooltip: Simply hover your mouse over any image, video, or complex media component to instantly see its source URL(s) in a clickable tooltip.
-Toggleable: The hover tooltip can be easily enabled or disabled with a single click on the 🖰 icon in the panel header. Its state is saved for future sessions.
-Intelligent Filtering: Automatically ignores common "garbage" media, like 1x1 tracking pixels, to provide a clean and relevant count.
+**Hover Tooltip:** Simply hover your mouse over any image, video, or complex media component to instantly see its source URL(s) in a clickable tooltip.
+**Toggleable:** The hover tooltip can be easily enabled or disabled with a single click on the ◎ icon in the panel header. Its state is saved for future sessions.
+**Intelligent Filtering:** Automatically ignores common "garbage" media, like 1x1 tracking pixels, to provide a clean and relevant count.
 
 
 ## 🔗 Installation
