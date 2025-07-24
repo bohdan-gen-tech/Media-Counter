@@ -1,0 +1,228 @@
+// ==UserScript==
+// @name         Media Counter
+// @namespace    http://tampermonkey.net/
+// @version      2025.07.24.1
+// @description  This script analyzes web pages to display an interactive panel counting all visible, hidden, and preloaded media, letting you view their links.
+// @author       Bohdan S.
+// @match        *://*/*
+// @icon         https://cdn-icons-png.flaticon.com/256/15271/15271482.png
+// @grant        none
+// @updateURL    https://raw.githubusercontent.com/bohdan-gen-tech/Media-Counter/main/media-counter.user.js
+// @downloadURL  https://raw.githubusercontent.com/bohdan-gen-tech/Media-Counter/main/media-counter.user.js
+// ==/UserScript==
+
+(function () {
+    'use strict';
+
+    /**
+     * @eng Main function to initialize the entire script after the DOM is ready.
+     */
+    function initializeScript() {
+        // --- CONFIGURATION ---
+        const config = {
+            storageKeys: {
+                position: 'mediaCounterPosition',
+                collapsed: 'mediaCounterCollapsed',
+                tooltipEnabled: 'mediaCounterTooltipEnabled',
+            },
+        };
+
+        // --- STYLES ---
+        const styles = `
+            .media-info-panel-vFinal { position: fixed; bottom: 20px; right: 20px; background-color: rgba(0,0,0,0.7); color: #fff; border-radius: 8px; font-family: monospace; font-size: 13px; z-index: 99998; text-align: left; min-width: 270px; border: 1px solid #555; backdrop-filter: blur(8px); overflow: hidden; }
+            .media-panel-header { display: flex; align-items: center; justify-content: space-between; background: #111; padding: 0 0 0 15px; margin: 0; border-bottom: 1px solid #444; height: 25px; cursor: move; user-select: none; }
+            .media-panel-header-title { font-weight: bold; }
+            .media-panel-controls { display: flex; align-items: center; height: 100%; }
+            .media-panel-header-btn { border: none; background: transparent; color: #aaa; cursor: pointer; padding: 0 6px; line-height: 1; transition: opacity 0.2s; }
+            .media-panel-header-btn[data-action="toggle-tooltip"] { font-size: 15px; margin-bottom: 1px;  margin-right: 2px; }
+            .media-panel-header-btn[data-action="toggle-collapse"] { font-size: 16px; }
+            .media-panel-header-btn[data-action="close"] { font-size: 18px; }
+            .media-panel-body { padding: 8px 15px; }
+            .media-panel-body hr { border: none; border-top: 1px solid #555; margin: 6px 0; }
+            .media-panel-body small { color: #ccc; font-weight: bold; }
+            b.counter-link { cursor: pointer; text-decoration: underline; font-weight: bold; }
+            .media-link-tooltip-vFinal { position: fixed; display: none; background-color: rgba(0, 0, 0, 0.85); color: #fff; padding: 8px 12px; border-radius: 6px; font-size: 13px; z-index: 99999; max-width: 450px; word-wrap: break-word; line-height: 1.5; font-family: monospace; }
+            .media-link-tooltip-vFinal a { color: #fff !important; text-decoration: underline !important; }
+            .media-link-tooltip-vFinal .tooltip-line { display: flex; align-items: center; }
+            .media-link-tooltip-vFinal .tooltip-line a { word-break: break-all; margin-left: 5px; }
+            .media-modal-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.6); z-index: 100000; display: none; align-items: center; justify-content: center; }
+            .media-modal-content { background: #fff; color: #333; border-radius: 8px; width: 90%; max-width: 800px; height: 80%; display: flex; flex-direction: column; font-family: sans-serif; }
+            .media-modal-header { padding: 10px 15px; font-size: 18px; font-weight: bold; border-bottom: 1px solid #eee; }
+            .media-modal-close { float: right; cursor: pointer; font-size: 24px; line-height: 1; }
+            .media-modal-body { padding: 15px; overflow-y: auto; flex-grow: 1; }
+            .media-list-item { display: flex; align-items: center; border-bottom: 1px solid #f0f0f0; padding: 8px 0; }
+            .media-list-preview { width: 80px; height: 60px; object-fit: cover; margin-right: 15px; border-radius: 4px; background: #eee; display: flex; align-items: center; justify-content: center; font-size: 24px; flex-shrink: 0; }
+            .media-list-link { word-break: break-all; font-size: 12px; }
+            .media-list-link a { color: #0056b3; }
+        `;
+        document.head.insertAdjacentHTML('beforeend', `<style>${styles.replace(/\s\s+/g, ' ')}</style>`);
+
+        // --- UI ELEMENT CREATION ---
+        const uiContainer = document.createElement('div');
+        uiContainer.dataset.userscriptUi = 'true';
+        document.body.appendChild(uiContainer);
+
+        const infoPanel = document.createElement('div');
+        infoPanel.className = 'media-info-panel-vFinal';
+        uiContainer.appendChild(infoPanel);
+
+        let isPanelCollapsed = JSON.parse(localStorage.getItem(config.storageKeys.collapsed)) || false;
+        let isTooltipEnabled = JSON.parse(localStorage.getItem(config.storageKeys.tooltipEnabled)) ?? true;
+
+        infoPanel.innerHTML = `
+            <div class="media-panel-header" data-handle="drag">
+                <span class="media-panel-header-title">Media Counter</span>
+                <div class="media-panel-controls">
+                    <button class="media-panel-header-btn" data-action="toggle-tooltip" title="Toggle Tooltip">◎</button>
+                    <button class="media-panel-header-btn" data-action="toggle-collapse" title="${isPanelCollapsed ? 'Expand' : 'Collapse'}">${isPanelCollapsed ? '⊞' : '−'}</button>
+                    <button class="media-panel-header-btn" data-action="close" title="Close">×</button>
+                </div>
+            </div>
+            <div class="media-panel-body" style="display: ${isPanelCollapsed ? 'none' : 'block'};">
+                <div><small>On Screen:</small><br>
+                🖼️ Images: <b class="counter-link" data-type="view-img" data-title="Images on Screen">0</b> (pre-gen: <b class="counter-link" data-type="view-pregen-img" data-title="Pre-gen Images on Screen">0</b>)<br>
+                📹 Videos: <b class="counter-link" data-type="view-vid" data-title="Videos on Screen">0</b> (pre-gen: <b class="counter-link" data-type="view-pregen-vid" data-title="Pre-gen Videos on Screen">0</b>)</div>
+                <hr>
+                <div><small>Hidden on Page:</small><br>
+                🖼️ Images: <b class="counter-link" data-type="hidden-img" data-title="Hidden Images">0</b> (pre-gen: <b class="counter-link" data-type="hidden-pregen-img" data-title="Hidden Pre-gen Images">0</b>)<br>
+                📹 Videos: <b class="counter-link" data-type="hidden-vid" data-title="Hidden Videos">0</b> (pre-gen: <b class="counter-link" data-type="hidden-pregen-vid" data-title="Hidden Pre-gen Videos">0</b>)</div>
+                <hr>
+                <div><small>All on Page (On Screen + Hidden):</small><br>
+                🖼️ Images: <b class="counter-link" data-type="all-img" data-title="All Images on Page">0</b> (pre-gen: <b class="counter-link" data-type="all-pregen-img" data-title="All Pre-gen Images on Page">0</b>)<br>
+                📹 Videos: <b class="counter-link" data-type="all-vid" data-title="All Videos on Page">0</b> (pre-gen: <b class="counter-link" data-type="all-pregen-vid" data-title="All Pre-gen Videos on Page">0</b>)</div>
+                 <hr>
+                <div><small>Alternative Sources (srcset):</small><br>
+                🖼️ Images: <b class="counter-link" data-type="srcset-img" data-title="Alternative Image Sources">0</b></div>
+                <hr>
+                <div><small>Preloaded (not rendered):</small><br>
+                🖼️ Images: <b class="counter-link" data-type="preload-img" data-title="Preloaded Images">0</b></div>
+            </div>
+        `;
+
+        const panelBody = infoPanel.querySelector('.media-panel-body');
+        const counterElements = {};
+        infoPanel.querySelectorAll('.counter-link').forEach(el => { counterElements[el.dataset.type] = el; });
+
+        const tooltip = document.createElement('div');
+        tooltip.className = 'media-link-tooltip-vFinal';
+        uiContainer.appendChild(tooltip);
+
+        const modal = document.createElement('div');
+        modal.className = 'media-modal-overlay';
+        modal.innerHTML = `<div class="media-modal-content"><div class="media-modal-header"><span class="media-modal-close">&times;</span><span class="media-modal-title"></span></div><div class="media-modal-body"></div></div>`;
+        uiContainer.appendChild(modal);
+
+        const modalTitle = modal.querySelector('.media-modal-title');
+        const modalBody = modal.querySelector('.media-modal-body');
+
+        /**
+         * @eng Checks if an element is currently visible within the browser's viewport.
+         */
+        const isElementInViewport = (el) => { if (!el.isConnected) return false; const style = window.getComputedStyle(el); if (style.display === 'none' || style.visibility === 'hidden' || parseFloat(style.opacity) === 0) return false; if (el.offsetWidth < 2 && el.offsetHeight < 2) return false; const rect = el.getBoundingClientRect(); return rect.top < window.innerHeight && rect.bottom > 0 && rect.left < window.innerWidth && rect.right > 0; };
+
+        /**
+         * @eng Populates and displays the modal window with a list of media links.
+         */
+        const populateAndShowModal = (dataType, title) => {
+            let listHTML = ''; const processedUrls = new Set();
+            if (dataType === 'preload-img') {
+                document.querySelectorAll(`link[rel="preload"][as="image"]`).forEach(el => {
+                    const src = el.href; if (!src || processedUrls.has(src)) return;
+                    const previewHTML = `<img class="media-list-preview" src="${src}" loading="lazy">`;
+                    listHTML += `<div class="media-list-item">${previewHTML}<div class="media-list-link"><a href="${src}" target="_blank" rel="noopener noreferrer">${src}</a></div></div>`;
+                    processedUrls.add(src);
+                });
+            } else if (dataType.startsWith('srcset-')) {
+                 document.querySelectorAll('img[srcset], source[srcset]').forEach(el => { const srcset = el.getAttribute('srcset'); if (!srcset) return; srcset.split(',').forEach(part => { const url = part.trim().split(' ')[0]; if (url && !processedUrls.has(url)) { listHTML += `<div class="media-list-item"><img class="media-list-preview" src="${url}" loading="lazy"><div class="media-list-link"><a href="${url}" target="_blank" rel="noopener noreferrer">${url}</a></div></div>`; processedUrls.add(url); } }); });
+            } else {
+                const filters = { isAll: dataType.startsWith('all-'), isViewport: dataType.startsWith('view-'), isHidden: dataType.startsWith('hidden-'), isImg: dataType.includes('img'), isVid: dataType.includes('vid'), isPregen: dataType.includes('pregen') };
+                document.querySelectorAll('img, video').forEach(el => {
+                    if (el.closest('[data-userscript-ui="true"]')) return; if ((el.naturalWidth === 1 && el.naturalHeight === 1)) return; const src = el.dataset.playinlinePreGeneratedSrc || el.currentSrc || el.src || ''; if (!src || src.startsWith('data:') || src.startsWith('blob:') || processedUrls.has(src)) return;
+                    if (!filters.isAll) { const inViewport = isElementInViewport(el); if (filters.isViewport && !inViewport) return; if (filters.isHidden && inViewport) return; }
+                    const elIsImg = el.tagName.toLowerCase() === 'img', elIsVid = !elIsImg, elIsPregen = /pre[_-]gen/i.test(src);
+                    let match = (filters.isImg && elIsImg) || (filters.isVid && elIsVid);
+                    if (match && filters.isPregen && !elIsPregen) match = false;
+                    if (match) { const previewHTML = elIsImg ? `<img class="media-list-preview" src="${src}" loading="lazy">` : `<div class="media-list-preview video-preview">📹</div>`; listHTML += `<div class="media-list-item">${previewHTML}<div class="media-list-link"><a href="${src}" target="_blank" rel="noopener noreferrer">${src}</a></div></div>`; processedUrls.add(src); }
+                });
+            }
+            modalTitle.textContent = `Links for: "${title}"`;
+            modalBody.innerHTML = listHTML || '<p>No links found.</p>';
+            modal.style.display = 'flex';
+        };
+
+        /**
+         * @eng The core counting function. It finds/counts all media and updates the panel's numbers.
+         */
+        const updateMediaCount = () => {
+            const countedUrls = new Set();
+            let viewport = { img: 0, vid: 0, p_img: 0, p_vid: 0 }, hidden = { img: 0, vid: 0, p_img: 0, p_vid: 0 };
+            document.querySelectorAll('img, video').forEach(el => { if (el.closest('[data-userscript-ui="true"]')) return; if ((el.naturalWidth === 1 && el.naturalHeight === 1)) return; const src = el.dataset.playinlinePreGeneratedSrc || el.currentSrc || el.src || ''; if (!src || src.startsWith('data:') || src.startsWith('blob:')) return; countedUrls.add(src); const isPregen = /pre[_-]gen/i.test(src), isImg = el.tagName.toLowerCase() === 'img'; if (isElementInViewport(el)) { if (isImg) { viewport.img++; if (isPregen) viewport.p_img++; } else { viewport.vid++; if (isPregen) viewport.p_vid++; } } else { if (isImg) { hidden.img++; if (isPregen) hidden.p_img++; } else { hidden.vid++; if (isPregen) hidden.p_vid++; } } });
+            let srcset = { img: 0 };
+            document.querySelectorAll('img[srcset], source[srcset]').forEach(el => { const srcsetAttr = el.getAttribute('srcset'); if (!srcsetAttr) return; srcsetAttr.split(',').forEach(part => { const url = part.trim().split(' ')[0]; if (url && !countedUrls.has(url)) { srcset.img++; countedUrls.add(url); } }); });
+            let preload = { img: 0 };
+            document.querySelectorAll('link[rel="preload"][as="image"]').forEach(el => preload.img++);
+            const all = { img: viewport.img + hidden.img, p_img: viewport.p_img + hidden.p_img, vid: viewport.vid + hidden.vid, p_vid: viewport.p_vid + hidden.p_vid };
+
+            counterElements['view-img'].textContent = viewport.img; counterElements['view-pregen-img'].textContent = viewport.p_img;
+            counterElements['view-vid'].textContent = viewport.vid; counterElements['view-pregen-vid'].textContent = viewport.p_vid;
+            counterElements['hidden-img'].textContent = hidden.img; counterElements['hidden-pregen-img'].textContent = hidden.p_img;
+            counterElements['hidden-vid'].textContent = hidden.vid; counterElements['hidden-pregen-vid'].textContent = hidden.p_vid;
+            counterElements['all-img'].textContent = all.img; counterElements['all-pregen-img'].textContent = all.p_img;
+            counterElements['all-vid'].textContent = all.vid; counterElements['all-pregen-vid'].textContent = all.p_vid;
+            counterElements['srcset-img'].textContent = srcset.img;
+            counterElements['preload-img'].textContent = preload.img;
+        };
+
+        const debounce = (func, delay) => { let timeout; return (...args) => { clearTimeout(timeout); timeout = setTimeout(() => func.apply(this, args), delay); }; };
+        const makeDraggable = (container) => { const dragHandle = container.querySelector('[data-handle="drag"]'); if (!dragHandle) return; let isDragging = false, offsetX, offsetY; const onDragStart = (e) => { isDragging = true; const coords = e.touches ? e.touches[0] : e; offsetX = coords.clientX - container.getBoundingClientRect().left; offsetY = coords.clientY - container.getBoundingClientRect().top; container.style.transition = 'none'; container.style.right = 'auto'; container.style.bottom = 'auto'; document.addEventListener('mousemove', onDragMove); document.addEventListener('touchmove', onDragMove, { passive: false }); document.addEventListener('mouseup', onDragEnd); document.addEventListener('touchend', onDragEnd); }; const onDragMove = (e) => { if (!isDragging) return; e.preventDefault(); const coords = e.touches ? e.touches[0] : e; container.style.left = `${coords.clientX - offsetX}px`; container.style.top = `${coords.clientY - offsetY}px`; }; const onDragEnd = () => { if (!isDragging) return; isDragging = false; document.removeEventListener('mousemove', onDragMove); document.removeEventListener('touchmove', onDragMove); document.removeEventListener('mouseup', onDragEnd); document.removeEventListener('touchend', onDragEnd); localStorage.setItem(config.storageKeys.position, JSON.stringify({ left: container.offsetLeft, top: container.offsetTop })); }; dragHandle.addEventListener('mousedown', onDragStart); dragHandle.addEventListener('touchstart', onDragStart, { passive: false }); };
+        const applySavedPosition = (container) => { const savedPos = localStorage.getItem(config.storageKeys.position); if (!savedPos) return; try { const pos = JSON.parse(savedPos); container.style.left = `${pos.left}px`; container.style.top = `${pos.top}px`; container.style.right = 'auto'; container.style.bottom = 'auto'; } catch (e) { console.error("Failed to apply saved position:", e); } };
+        const handleToggleCollapse = (button) => { isPanelCollapsed = !isPanelCollapsed; panelBody.style.display = isPanelCollapsed ? 'none' : 'block'; button.textContent = isPanelCollapsed ? '⊞' : '−'; button.title = isPanelCollapsed ? 'Expand' : 'Collapse'; localStorage.setItem(config.storageKeys.collapsed, JSON.stringify(isPanelCollapsed)); };
+        const handleToggleTooltip = (button) => { isTooltipEnabled = !isTooltipEnabled; button.style.opacity = isTooltipEnabled ? '1.0' : '0.4'; button.title = isTooltipEnabled ? 'Disable Tooltip' : 'Enable Tooltip'; localStorage.setItem(config.storageKeys.tooltipEnabled, JSON.stringify(isTooltipEnabled)); };
+
+        // --- EVENT LISTENERS AND OBSERVERS ---
+        const debouncedUpdateCount = debounce(updateMediaCount, 200);
+        const observer = new MutationObserver(debouncedUpdateCount);
+        observer.observe(document.body, { childList: true, subtree: true, attributes: true });
+
+        document.addEventListener('scroll', debouncedUpdateCount, { passive: true });
+
+        infoPanel.addEventListener('click', (e) => { const actionTarget = e.target.closest('[data-action]'); if (actionTarget) { const action = actionTarget.dataset.action; if (action === 'close') { infoPanel.remove(); } if (action === 'toggle-collapse') { handleToggleCollapse(actionTarget); } if (action === 'toggle-tooltip') { handleToggleTooltip(actionTarget); } } else { const counter = e.target.closest('.counter-link'); if (counter) { populateAndShowModal(counter.dataset.type, counter.dataset.title); } } });
+        modal.querySelector('.media-modal-close').addEventListener('click', () => modal.style.display = 'none');
+        modal.addEventListener('click', (e) => { if (e.target === modal) modal.style.display = 'none'; });
+
+        let hideTooltipTimer = null;
+        tooltip.addEventListener('mouseover', () => clearTimeout(hideTooltipTimer));
+        tooltip.addEventListener('mouseout', () => { hideTooltipTimer = setTimeout(() => { tooltip.style.display = 'none'; }, 300); });
+
+        document.addEventListener('mouseover', (e) => {
+            if (!isTooltipEnabled || e.target.closest('[data-userscript-ui="true"]')) return;
+            const container = e.target.closest('[class*="_imageContainer"], [class*="media-container"], [class*="ImageContainer"]');
+            let imgSrc = '', vidSrc = '';
+            if (container) { const imageEl = container.querySelector('img'); const videoEl = container.querySelector('video'); if (imageEl) imgSrc = imageEl.currentSrc || imageEl.src; if (videoEl) vidSrc = videoEl.src; }
+            else if (e.target.tagName === 'IMG' || e.target.tagName === 'VIDEO') { const el = e.target; if (el.tagName === 'IMG') imgSrc = el.currentSrc || el.src; if (el.tagName === 'VIDEO') vidSrc = el.currentSrc || el.src; }
+            else if (window.getComputedStyle(e.target).backgroundImage.includes('url')) { imgSrc = window.getComputedStyle(e.target).backgroundImage.match(/url\(['"]?(.*?)['"]?\)/)?.[1] || ''; }
+            if (imgSrc || vidSrc) {
+                let tooltipHTML = '';
+                if (imgSrc && !imgSrc.startsWith('data:')) { tooltipHTML += `<div class="tooltip-line">🖼️<a href="${imgSrc}" target="_blank" rel="noopener noreferrer">${imgSrc}</a></div>`; }
+                if (vidSrc && !vidSrc.startsWith('data:')) { tooltipHTML += `<div class="tooltip-line">📹<a href="${vidSrc}" target="_blank" rel="noopener noreferrer">${vidSrc}</a></div>`; }
+                if (tooltipHTML) { clearTimeout(hideTooltipTimer); tooltip.innerHTML = tooltipHTML; tooltip.style.display = 'block'; tooltip.style.left = `${e.clientX + 15}px`; tooltip.style.top = `${e.clientY + 15}px`; }
+            }
+        }, { passive: true });
+
+        document.addEventListener('mouseout', (e) => { if (!isTooltipEnabled) return; if (e.target.closest('[class*="_imageContainer"], [class*="media-container"], [class*="ImageContainer"]') || e.target.tagName === 'IMG' || e.target.tagName === 'VIDEO') { hideTooltipTimer = setTimeout(() => { tooltip.style.display = 'none'; }, 300); } }, { passive: true });
+
+        // --- SCRIPT INITIALIZATION ---
+        const tooltipToggleButton = infoPanel.querySelector('[data-action="toggle-tooltip"]');
+        tooltipToggleButton.style.opacity = isTooltipEnabled ? '1.0' : '0.4';
+        tooltipToggleButton.title = isTooltipEnabled ? 'Disable Tooltip' : 'Enable Tooltip';
+
+        makeDraggable(infoPanel);
+        applySavedPosition(infoPanel);
+        debouncedUpdateCount();
+    }
+
+    // Wait for the DOM to be ready before initializing the script
+    if (document.readyState === 'loading') { document.addEventListener('DOMContentLoaded', initializeScript); }
+    else { initializeScript(); }
+
+})();
