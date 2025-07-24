@@ -12,7 +12,7 @@ The script counts and categorizes all media into logical groups:
 2. **Hidden on Page:** Counts rendered img and video tags that are currently invisible (e.g., hidden by CSS, outside the viewport, or used for hover effects).
 3. **All on Page:** A sum of all rendered media (On Screen + Hidden).
 4. **Alternative Sources (srcset):** Finds and counts all unique image URLs provided in srcset attributes, which are used for responsive design.
-5. **Preloaded:** Counts resources being fetched in the background via <link rel="preload">, which affect load time but are not rendered on the page.
+5. **Preloaded:** Counts resources being fetched in the background via link rel="preload", which affect load time but are not rendered on the page.
 6. **Sub-Categories:** Provides a separate count for media containing pre-gen in their URL across all relevant categories.
 
 **Instant Link Discovery**
