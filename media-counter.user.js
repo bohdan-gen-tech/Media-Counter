@@ -1,10 +1,12 @@
 // ==UserScript==
 // @name         Media Counter
 // @namespace    http://tampermonkey.net/
-// @version      2025.07.24.3
-// @description  This script analyzes web pages to display an interactive panel counting all visible, hidden, and preloaded media, letting you view their links.
+// @version      2025.07.28.1
+// @description  Adds detailed file info (size, load time, dimensions) to the modal link list.
 // @author       Bohdan S.
 // @match        *://*/*
+// @exclude      https://form-v2.charge-auth.com/*
+// @exclude      https://pay.google.com/*
 // @icon         https://cdn-icons-png.flaticon.com/256/15271/15271482.png
 // @grant        none
 // @updateURL    https://raw.githubusercontent.com/bohdan-gen-tech/Media-Counter/main/media-counter.user.js
@@ -29,7 +31,7 @@
 
         // --- STYLES ---
         const styles = `
-            .media-info-panel-vFinal { position: fixed; bottom: 20px; right: 20px; background-color: rgba(0,0,0,0.7); color: #fff; border-radius: 8px; font-family: monospace; font-size: 13px; z-index: 99998; text-align: left; min-width: 270px; border: 1px solid #555; backdrop-filter: blur(8px); overflow: hidden; }
+            .media-info-panel-vFinal { position: fixed; bottom: 20px; right: 20px; background-color: rgba(0,0,0,0.7); color: #fff; border-radius: 8px; font-family: monospace; font-size: 10px; z-index: 99998; text-align: left; min-width: 270px; border: 1px solid #555; backdrop-filter: blur(8px); overflow: hidden; }
             .media-panel-header { display: flex; align-items: center; justify-content: space-between; background: #111; padding: 0 0 0 15px; margin: 0; border-bottom: 1px solid #444; height: 25px; cursor: move; user-select: none; }
             .media-panel-header-title { font-weight: bold; }
             .media-panel-controls { display: flex; align-items: center; height: 100%; }
