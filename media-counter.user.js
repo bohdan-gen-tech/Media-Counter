@@ -2,7 +2,7 @@
 // @name         Media Counter
 // @namespace    http://tampermonkey.net/
 // @version      2025.08.04.1
-// @description  Adds detailed file info (size, load time, dimensions) to the modal link list.
+// @description  Fixed bug for initial state when user tries to use header buttons
 // @author       Bohdan S.
 // @match        *://*/*
 // @exclude      https://form-v2.charge-auth.com/*
