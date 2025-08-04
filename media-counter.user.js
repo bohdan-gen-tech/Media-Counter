@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Media Counter
 // @namespace    http://tampermonkey.net/
-// @version      2025.07.28.1
+// @version      2025.08.04.1
 // @description  Adds detailed file info (size, load time, dimensions) to the modal link list.
 // @author       Bohdan S.
 // @match        *://*/*
@@ -31,12 +31,12 @@
 
         // --- STYLES ---
         const styles = `
-            .media-info-panel-vFinal { position: fixed; bottom: 20px; right: 20px; background-color: rgba(0,0,0,0.7); color: #fff; border-radius: 8px; font-family: monospace; font-size: 10px; z-index: 99998; text-align: left; min-width: 270px; border: 1px solid #555; backdrop-filter: blur(8px); overflow: hidden; }
+            .media-info-panel-vFinal { position: fixed; bottom: 20px; right: 20px; background-color: rgba(0,0,0,0.7); color: #fff; border-radius: 8px; font-family: monospace; font-size: 13px; z-index: 99998; text-align: left; min-width: 270px; border: 1px solid #555; backdrop-filter: blur(8px); overflow: hidden; }
             .media-panel-header { display: flex; align-items: center; justify-content: space-between; background: #111; padding: 0 0 0 15px; margin: 0; border-bottom: 1px solid #444; height: 25px; cursor: move; user-select: none; }
             .media-panel-header-title { font-weight: bold; }
             .media-panel-controls { display: flex; align-items: center; height: 100%; }
             .media-panel-header-btn { border: none; background: transparent; color: #aaa; cursor: pointer; padding: 0 6px; line-height: 1; transition: opacity 0.2s; }
-            .media-panel-header-btn[data-action="toggle-tooltip"] { font-size: 15px; margin-bottom: 1px;  margin-right: 2px; }
+            .media-panel-header-btn[data-action="toggle-tooltip"] { font-size: 15px; }
             .media-panel-header-btn[data-action="toggle-collapse"] { font-size: 16px; }
             .media-panel-header-btn[data-action="close"] { font-size: 18px; }
             .media-panel-body { padding: 8px 15px; }
@@ -115,40 +115,10 @@
         const modalTitle = modal.querySelector('.media-modal-title');
         const modalBody = modal.querySelector('.media-modal-body');
 
-        /**
-        * @eng Takes a URL string and returns an HTML string with highlighted keywords.
-        * This version uses word boundaries (\b) to correctly distinguish between 'sfw' and 'nsfw'.
-        * @param {string} url The URL to colorize.
-        * @returns {string} The HTML string with colored spans.
-        */
-        const colorizeUrl = (url) => {
-            const rules = [
-                { regex: /(?<![a-zA-Z])(nsfw)(?![a-zA-Z])/gi, color: '#e74c3c' },      // Red
-                { regex: /(?<![a-zA-Z])(sfw)(?![a-zA-Z])/gi, color: '#2ecc71' },       // Green
-
-                { regex: /(pre[_-]?gen)/gi, color: '#2ecc71' },   // Green
-                { regex: /(chat[_-]?generated)/gi, color: '#f1c40f' }, // Yellow
-                { regex: /(welcome)/gi, color: '#5dade2' },       // Light Blue
-                { regex: /(cover)/gi, color: '#9b59b6' },          // Purple
-                { regex: /(person[_-]?models)/gi, color: '#3498db' } // Blue
-            ];
-
-            // Escape basic HTML characters to prevent issues
-            let coloredUrl = url.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-
-            // Apply each rule to the URL
-            for (const rule of rules) {
-                coloredUrl = coloredUrl.replace(rule.regex, (match) => `<span style="color: ${rule.color}; font-weight: bold;">${match}</span>`);
-            }
-
-            return coloredUrl;
-        };
+        const colorizeUrl = (url) => { const rules = [ { regex: /(nsfw)/gi, color: '#e74c3c' }, { regex: /(swf)/gi, color: '#2ecc71' }, { regex: /(pre[_-]?gen)/gi, color: '#2ecc71' }, { regex: /(chat[_-]?generated)/gi, color: '#f1c40f' }, { regex: /(welcome)/gi, color: '#5dade2' }, { regex: /(cover)/gi, color: '#9b59b6' }, { regex: /(person[_-]?models)/gi, color: '#3498db' } ]; let coloredUrl = url.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'); for (const rule of rules) { coloredUrl = coloredUrl.replace(rule.regex, (match) => `<span style="color: ${rule.color}; font-weight: bold;">${match}</span>`); } return coloredUrl; };
         const isElementInViewport = (el) => { if (!el.isConnected) return false; const style = window.getComputedStyle(el); if (style.display === 'none' || style.visibility === 'hidden' || parseFloat(style.opacity) === 0) return false; if (el.offsetWidth < 2 && el.offsetHeight < 2) return false; const rect = el.getBoundingClientRect(); return rect.top < window.innerHeight && rect.bottom > 0 && rect.left < window.innerWidth && rect.right > 0; };
 
-        const refreshPerformanceMap = () => {
-            const performanceEntries = window.performance.getEntriesByType('resource');
-            performanceMap = new Map(performanceEntries.map(entry => [entry.name, entry]));
-        };
+        const refreshPerformanceMap = () => { const performanceEntries = window.performance.getEntriesByType('resource'); performanceMap = new Map(performanceEntries.map(entry => [entry.name, entry])); };
 
         const populateAndShowModal = (dataType, title) => {
             refreshPerformanceMap();
@@ -191,11 +161,40 @@
         };
 
         const debounce = (func, delay) => { let timeout; return (...args) => { clearTimeout(timeout); timeout = setTimeout(() => func.apply(this, args), delay); }; };
+
+        /**
+         * @eng Makes the panel draggable.
+         */
         const makeDraggable = (container) => { const dragHandle = container.querySelector('[data-handle="drag"]'); if (!dragHandle) return; let isDragging = false, offsetX, offsetY; const onDragStart = (e) => { isDragging = true; const coords = e.touches ? e.touches[0] : e; offsetX = coords.clientX - container.getBoundingClientRect().left; offsetY = coords.clientY - container.getBoundingClientRect().top; container.style.transition = 'none'; container.style.right = 'auto'; container.style.bottom = 'auto'; document.addEventListener('mousemove', onDragMove); document.addEventListener('touchmove', onDragMove, { passive: false }); document.addEventListener('mouseup', onDragEnd); document.addEventListener('touchend', onDragEnd); }; const onDragMove = (e) => { if (!isDragging) return; e.preventDefault(); const coords = e.touches ? e.touches[0] : e; container.style.left = `${coords.clientX - offsetX}px`; container.style.top = `${coords.clientY - offsetY}px`; }; const onDragEnd = () => { if (!isDragging) return; isDragging = false; document.removeEventListener('mousemove', onDragMove); document.removeEventListener('touchmove', onDragMove); document.removeEventListener('mouseup', onDragEnd); document.removeEventListener('touchend', onDragEnd); localStorage.setItem(config.storageKeys.position, JSON.stringify({ left: container.offsetLeft, top: container.offsetTop })); }; dragHandle.addEventListener('mousedown', onDragStart); dragHandle.addEventListener('touchstart', onDragStart, { passive: false }); };
-        const applySavedPosition = (container) => { const savedPos = localStorage.getItem(config.storageKeys.position); if (!savedPos) return; try { const pos = JSON.parse(savedPos); container.style.left = `${pos.left}px`; container.style.top = `${pos.top}px`; container.style.right = 'auto'; container.style.bottom = 'auto'; } catch (e) { console.error("Failed to apply saved position:", e); } };
+
+        /**
+         * @eng Applies the saved panel position from localStorage, or calculates and saves the initial one.
+         */
+        const initializePanelPosition = (container) => {
+            const savedPos = localStorage.getItem(config.storageKeys.position);
+            if (savedPos) {
+                try {
+                    const pos = JSON.parse(savedPos);
+                    container.style.left = `${pos.left}px`;
+                    container.style.top = `${pos.top}px`;
+                } catch (e) { console.error("Failed to apply saved position:", e); }
+            } else {
+                // If no position is saved, calculate and set the initial position
+                // This prevents the panel from disappearing on first-time header clicks
+                const rect = container.getBoundingClientRect();
+                const initialPos = { left: rect.left, top: rect.top };
+                container.style.left = `${initialPos.left}px`;
+                container.style.top = `${initialPos.top}px`;
+                localStorage.setItem(config.storageKeys.position, JSON.stringify(initialPos));
+            }
+            container.style.right = 'auto';
+            container.style.bottom = 'auto';
+        };
+
         const handleToggleCollapse = (button) => { isPanelCollapsed = !isPanelCollapsed; panelBody.style.display = isPanelCollapsed ? 'none' : 'block'; button.textContent = isPanelCollapsed ? '⊞' : '−'; button.title = isPanelCollapsed ? 'Expand' : 'Collapse'; localStorage.setItem(config.storageKeys.collapsed, JSON.stringify(isPanelCollapsed)); };
         const handleToggleTooltip = (button) => { isTooltipEnabled = !isTooltipEnabled; button.style.opacity = isTooltipEnabled ? '1.0' : '0.4'; button.title = isTooltipEnabled ? 'Disable Tooltip' : 'Enable Tooltip'; localStorage.setItem(config.storageKeys.tooltipEnabled, JSON.stringify(isTooltipEnabled)); };
 
+        // --- EVENT LISTENERS AND OBSERVERS ---
         const debouncedUpdateCount = debounce(updateMediaCount, 200);
         const observer = new MutationObserver(debouncedUpdateCount);
         observer.observe(document.body, { childList: true, subtree: true, attributes: true });
@@ -206,42 +205,18 @@
         let hideTooltipTimer = null;
         tooltip.addEventListener('mouseover', () => clearTimeout(hideTooltipTimer));
         tooltip.addEventListener('mouseout', () => { hideTooltipTimer = setTimeout(() => { tooltip.style.display = 'none'; }, 300); });
-
-        document.addEventListener('mouseover', (e) => {
-            if (!isTooltipEnabled || e.target.closest('[data-userscript-ui="true"]')) return;
-            const container = e.target.closest('[class*="_imageContainer"], [class*="media-container"], [class*="ImageContainer"]');
-            let imgSrc = '', vidSrc = '';
-            if (container) { const imageEl = container.querySelector('img'); const videoEl = container.querySelector('video'); if (imageEl) imgSrc = imageEl.currentSrc || imageEl.src; if (videoEl) vidSrc = videoEl.src; }
-            else if (e.target.tagName === 'IMG' || e.target.tagName === 'VIDEO') { const el = e.target; if (el.tagName === 'IMG') imgSrc = el.currentSrc || el.src; if (el.tagName === 'VIDEO') vidSrc = el.currentSrc || el.src; }
-            else if (window.getComputedStyle(e.target).backgroundImage.includes('url')) { imgSrc = window.getComputedStyle(e.target).backgroundImage.match(/url\(['"]?(.*?)['"]?\)/)?.[1] || ''; }
-            if (imgSrc || vidSrc) {
-                let tooltipHTML = '';
-                if (imgSrc && !imgSrc.startsWith('data:')) {
-                    const perf = performanceMap.get(imgSrc);
-                    const fileSize = perf?.transferSize ? `${(perf.transferSize / 1024).toFixed(1)} KB` : '';
-                    const fileSizeHTML = fileSize ? `<span class="tooltip-filesize">(${fileSize})</span>` : '';
-                    tooltipHTML += `<div class="tooltip-line"><span class="tooltip-icon">🖼️</span><div class="tooltip-content"><a href="${imgSrc}" target="_blank" rel="noopener noreferrer">${colorizeUrl(imgSrc)}</a>${fileSizeHTML}</div></div>`;
-                }
-                if (vidSrc && !vidSrc.startsWith('data:')) {
-                    const perf = performanceMap.get(vidSrc);
-                    const fileSize = perf?.transferSize ? `${(perf.transferSize / 1024).toFixed(1)} KB` : '';
-                    const fileSizeHTML = fileSize ? `<span class="tooltip-filesize">(${fileSize})</span>` : '';
-                    tooltipHTML += `<div class="tooltip-line"><span class="tooltip-icon">📹</span><div class="tooltip-content"><a href="${vidSrc}" target="_blank" rel="noopener noreferrer">${colorizeUrl(vidSrc)}</a>${fileSizeHTML}</div></div>`;
-                }
-                if (tooltipHTML) { clearTimeout(hideTooltipTimer); tooltip.innerHTML = tooltipHTML; tooltip.style.display = 'block'; tooltip.style.left = `${e.clientX + 15}px`; tooltip.style.top = `${e.clientY + 15}px`; }
-            }
-        }, { passive: true });
-
+        document.addEventListener('mouseover', (e) => { if (!isTooltipEnabled || e.target.closest('[data-userscript-ui="true"]')) return; const container = e.target.closest('[class*="_imageContainer"], [class*="media-container"], [class*="ImageContainer"]'); let imgSrc = '', vidSrc = ''; if (container) { const imageEl = container.querySelector('img'); const videoEl = container.querySelector('video'); if (imageEl) imgSrc = imageEl.currentSrc || imageEl.src; if (videoEl) vidSrc = videoEl.src; } else if (e.target.tagName === 'IMG' || e.target.tagName === 'VIDEO') { const el = e.target; if (el.tagName === 'IMG') imgSrc = el.currentSrc || el.src; if (el.tagName === 'VIDEO') vidSrc = el.currentSrc || el.src; } else if (window.getComputedStyle(e.target).backgroundImage.includes('url')) { imgSrc = window.getComputedStyle(e.target).backgroundImage.match(/url\(['"]?(.*?)['"]?\)/)?.[1] || ''; } if (imgSrc || vidSrc) { let tooltipHTML = ''; if (imgSrc && !imgSrc.startsWith('data:')) { const perf = performanceMap.get(imgSrc); const fileSize = perf?.transferSize ? `${(perf.transferSize / 1024).toFixed(1)} KB` : ''; const fileSizeHTML = fileSize ? `<span class="tooltip-filesize">(${fileSize})</span>` : ''; tooltipHTML += `<div class="tooltip-line"><span class="tooltip-icon">🖼️</span><div class="tooltip-content"><a href="${imgSrc}" target="_blank" rel="noopener noreferrer">${colorizeUrl(imgSrc)}</a>${fileSizeHTML}</div></div>`; } if (vidSrc && !vidSrc.startsWith('data:')) { const perf = performanceMap.get(vidSrc); const fileSize = perf?.transferSize ? `${(perf.transferSize / 1024).toFixed(1)} KB` : ''; const fileSizeHTML = fileSize ? `<span class="tooltip-filesize">(${fileSize})</span>` : ''; tooltipHTML += `<div class="tooltip-line"><span class="tooltip-icon">📹</span><div class="tooltip-content"><a href="${vidSrc}" target="_blank" rel="noopener noreferrer">${colorizeUrl(vidSrc)}</a>${fileSizeHTML}</div></div>`; } if (tooltipHTML) { clearTimeout(hideTooltipTimer); tooltip.innerHTML = tooltipHTML; tooltip.style.display = 'block'; tooltip.style.left = `${e.clientX + 15}px`; tooltip.style.top = `${e.clientY + 15}px`; } } }, { passive: true });
         document.addEventListener('mouseout', (e) => { if (!isTooltipEnabled) return; if (e.target.closest('[class*="_imageContainer"], [class*="media-container"], [class*="ImageContainer"]') || e.target.tagName === 'IMG' || e.target.tagName === 'VIDEO') { hideTooltipTimer = setTimeout(() => { tooltip.style.display = 'none'; }, 300); } }, { passive: true });
 
         const tooltipToggleButton = infoPanel.querySelector('[data-action="toggle-tooltip"]');
         tooltipToggleButton.style.opacity = isTooltipEnabled ? '1.0' : '0.4';
         tooltipToggleButton.title = isTooltipEnabled ? 'Disable Tooltip' : 'Enable Tooltip';
         makeDraggable(infoPanel);
-        applySavedPosition(infoPanel);
+        initializePanelPosition(infoPanel); // Changed from applySavedPosition
         debouncedUpdateCount();
     }
 
+    // Wait for the DOM to be ready before initializing the script
     if (document.readyState === 'loading') { document.addEventListener('DOMContentLoaded', initializeScript); }
     else { initializeScript(); }
 
