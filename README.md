@@ -19,7 +19,8 @@ The script counts and categorizes all media into logical groups:
 
 1. **Hover Tooltip:** Simply hover your mouse over any image, video, or complex media component to instantly see its source URL(s) in a clickable tooltip.
 2. **Toggleable:** The hover tooltip can be easily enabled or disabled with a single click on the ◎ icon in the panel header. Its state is saved for future sessions.
-3. **Intelligent Filtering:** Automatically ignores common "garbage" media, like 1x1 tracking pixels, to provide a clean and relevant count.
+3. **Unblur all** Show all images and video with blurred effect on the page and which are waiting for a click
+4. **Intelligent Filtering:** Automatically ignores common "garbage" media, like 1x1 tracking pixels, to provide a clean and relevant count.
 
 
 ## 🔗 Installation
