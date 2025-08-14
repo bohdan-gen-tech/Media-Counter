@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         Media Counter
 // @namespace    http://tampermonkey.net/
-// @version      2025.08.04.1
-// @description  Fixed bug for initial state when user tries to use header buttons
+// @version      2025.08.14.2
+// @description  Adds detailed file info (size, load time, dimensions) to the modal link list and an unblur feature for photos and videos.
 // @author       Bohdan S.
 // @match        *://*/*
 // @exclude      https://form-v2.charge-auth.com/*
@@ -33,10 +33,12 @@
         const styles = `
             .media-info-panel-vFinal { position: fixed; bottom: 20px; right: 20px; background-color: rgba(0,0,0,0.7); color: #fff; border-radius: 8px; font-family: monospace; font-size: 13px; z-index: 99998; text-align: left; min-width: 270px; border: 1px solid #555; backdrop-filter: blur(8px); overflow: hidden; }
             .media-panel-header { display: flex; align-items: center; justify-content: space-between; background: #111; padding: 0 0 0 15px; margin: 0; border-bottom: 1px solid #444; height: 25px; cursor: move; user-select: none; }
-            .media-panel-header-title { font-weight: bold; }
+            .media-panel-header-title { font-weight: bold; font-size: 10px;}
             .media-panel-controls { display: flex; align-items: center; height: 100%; }
-            .media-panel-header-btn { border: none; background: transparent; color: #aaa; cursor: pointer; padding: 0 6px; line-height: 1; transition: opacity 0.2s; }
-            .media-panel-header-btn[data-action="toggle-tooltip"] { font-size: 15px; }
+            .media-panel-header-btn { border: none; background: transparent; color: #aaa; cursor: pointer; padding: 0 6px; line-height: 1; transition: opacity 0.2s, color 0.3s, transform 0.1s ease; }
+            .media-panel-header-btn[data-action="unblur-all"] { font-size: 9px; transform: translateY(1px); }
+            .media-panel-header-btn[data-action="unblur-all"]:active { transform: translateY(2px) scale(0.75); }
+            .media-panel-header-btn[data-action="toggle-tooltip"] { font-size: 15px; transform: translateY(-1px); }
             .media-panel-header-btn[data-action="toggle-collapse"] { font-size: 16px; }
             .media-panel-header-btn[data-action="close"] { font-size: 18px; }
             .media-panel-body { padding: 8px 15px; }
@@ -75,6 +77,7 @@
             <div class="media-panel-header" data-handle="drag">
                 <span class="media-panel-header-title">Media Counter</span>
                 <div class="media-panel-controls">
+                    <button class="media-panel-header-btn" data-action="unblur-all" title="Unblur All">👀</button>
                     <button class="media-panel-header-btn" data-action="toggle-tooltip" title="Toggle Tooltip">◎</button>
                     <button class="media-panel-header-btn" data-action="toggle-collapse" title="${isPanelCollapsed ? 'Expand' : 'Collapse'}">${isPanelCollapsed ? '⊞' : '−'}</button>
                     <button class="media-panel-header-btn" data-action="close" title="Close">×</button>
@@ -194,12 +197,37 @@
         const handleToggleCollapse = (button) => { isPanelCollapsed = !isPanelCollapsed; panelBody.style.display = isPanelCollapsed ? 'none' : 'block'; button.textContent = isPanelCollapsed ? '⊞' : '−'; button.title = isPanelCollapsed ? 'Expand' : 'Collapse'; localStorage.setItem(config.storageKeys.collapsed, JSON.stringify(isPanelCollapsed)); };
         const handleToggleTooltip = (button) => { isTooltipEnabled = !isTooltipEnabled; button.style.opacity = isTooltipEnabled ? '1.0' : '0.4'; button.title = isTooltipEnabled ? 'Disable Tooltip' : 'Enable Tooltip'; localStorage.setItem(config.storageKeys.tooltipEnabled, JSON.stringify(isTooltipEnabled)); };
 
+        /**
+         * @eng Handles the "Unblur All" button click by directly removing the blur overlay from photos and videos.
+         */
+        const handleUnblurAll = (button) => {
+            // Find all elements with NSFW text (for both photos and videos)
+            const textElements = document.querySelectorAll('[class*="_nsfwText"]');
+            let unblurredCount = 0;
+
+            textElements.forEach(textEl => {
+                // Combine selectors for both photo and video overlays.
+                // This is more specific and robust than the previous generic selector.
+                const blurOverlay = textEl.closest('[class*="_photoNoise"], [class*="_noise_"]');
+                if (blurOverlay) {
+                    blurOverlay.remove();
+                    unblurredCount++;
+                }
+            });
+
+            console.log(`Unblurred ${unblurredCount} items by removing overlays.`);
+            if (unblurredCount > 0) {
+                button.style.color = '#2ecc71'; // Green feedback
+                setTimeout(() => { button.style.color = '#aaa'; }, 1000);
+            }
+        };
+
         // --- EVENT LISTENERS AND OBSERVERS ---
         const debouncedUpdateCount = debounce(updateMediaCount, 200);
         const observer = new MutationObserver(debouncedUpdateCount);
         observer.observe(document.body, { childList: true, subtree: true, attributes: true });
         document.addEventListener('scroll', debouncedUpdateCount, { passive: true });
-        infoPanel.addEventListener('click', (e) => { const actionTarget = e.target.closest('[data-action]'); if (actionTarget) { const action = actionTarget.dataset.action; if (action === 'close') { infoPanel.remove(); } if (action === 'toggle-collapse') { handleToggleCollapse(actionTarget); } if (action === 'toggle-tooltip') { handleToggleTooltip(actionTarget); } } else { const counter = e.target.closest('.counter-link'); if (counter) { populateAndShowModal(counter.dataset.type, counter.dataset.title); } } });
+        infoPanel.addEventListener('click', (e) => { const actionTarget = e.target.closest('[data-action]'); if (actionTarget) { const action = actionTarget.dataset.action; if (action === 'close') { infoPanel.remove(); } else if (action === 'toggle-collapse') { handleToggleCollapse(actionTarget); } else if (action === 'toggle-tooltip') { handleToggleTooltip(actionTarget); } else if (action === 'unblur-all') { handleUnblurAll(actionTarget); } } else { const counter = e.target.closest('.counter-link'); if (counter) { populateAndShowModal(counter.dataset.type, counter.dataset.title); } } });
         modal.querySelector('.media-modal-close').addEventListener('click', () => modal.style.display = 'none');
         modal.addEventListener('click', (e) => { if (e.target === modal) modal.style.display = 'none'; });
         let hideTooltipTimer = null;
@@ -212,7 +240,7 @@
         tooltipToggleButton.style.opacity = isTooltipEnabled ? '1.0' : '0.4';
         tooltipToggleButton.title = isTooltipEnabled ? 'Disable Tooltip' : 'Enable Tooltip';
         makeDraggable(infoPanel);
-        initializePanelPosition(infoPanel); // Changed from applySavedPosition
+        initializePanelPosition(infoPanel);
         debouncedUpdateCount();
     }
 
