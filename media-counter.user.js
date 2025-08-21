@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         Media Counter
-// @namespace    http://tampermonkey.net/
+// @namespace    https://github.com/bohdan-gen-tech
 // @version      2025.08.22.1
 // @description  Fixed dimensions according to DPR value. Added copy URL button by clicking on media emoji of tooltip. Won't run in iframe.
 // @author       Bohdan S.
