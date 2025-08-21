@@ -1,12 +1,10 @@
 // ==UserScript==
 // @name         Media Counter
 // @namespace    http://tampermonkey.net/
-// @version      2025.08.14.2
-// @description  Adds detailed file info (size, load time, dimensions) to the modal link list and an unblur feature for photos and videos.
+// @version      2025.08.22
+// @description  Fixed dimensions according to DPR value. Added copy URL button by clicking on media emoji of tooltip
 // @author       Bohdan S.
 // @match        *://*/*
-// @exclude      https://form-v2.charge-auth.com/*
-// @exclude      https://pay.google.com/*
 // @icon         https://cdn-icons-png.flaticon.com/256/15271/15271482.png
 // @grant        none
 // @updateURL    https://raw.githubusercontent.com/bohdan-gen-tech/Media-Counter/main/media-counter.user.js
@@ -15,6 +13,10 @@
 
 (function () {
     'use strict';
+
+    if (window.self !== window.top) {
+        return;
+    }
 
     /**
      * @eng Main function to initialize the entire script after the DOM is ready.
@@ -31,6 +33,23 @@
 
         // --- STYLES ---
         const styles = `
+            @keyframes green-flash {
+                0% {
+                    transform: scale(1.1);
+                    color: #fff;
+                    text-shadow: 0 0 8px #fff, 0 0 15px #2ecc71;
+                }
+                50% {
+                    transform: scale(1.35);
+                    color: #2ecc71;
+                    text-shadow: 0 0 12px #fff, 0 0 25px #2ecc71, 0 0 35px #2ecc71;
+                }
+                100% {
+                    transform: scale(1.2);
+                    color: #2ecc71;
+                    text-shadow: 0 0 10px rgba(46, 204, 113, 0.7);
+                }
+            }
             .media-info-panel-vFinal { position: fixed; bottom: 20px; right: 20px; background-color: rgba(0,0,0,0.7); color: #fff; border-radius: 8px; font-family: monospace; font-size: 13px; z-index: 99998; text-align: left; min-width: 270px; border: 1px solid #555; backdrop-filter: blur(8px); overflow: hidden; }
             .media-panel-header { display: flex; align-items: center; justify-content: space-between; background: #111; padding: 0 0 0 15px; margin: 0; border-bottom: 1px solid #444; height: 25px; cursor: move; user-select: none; }
             .media-panel-header-title { font-weight: bold; font-size: 10px;}
@@ -49,6 +68,10 @@
             .media-link-tooltip-vFinal a { color: #fff !important; text-decoration: none !important; }
             .media-link-tooltip-vFinal .tooltip-line { display: flex; align-items: flex-start; }
             .media-link-tooltip-vFinal .tooltip-icon { margin-right: 5px; flex-shrink: 0; line-height: 1.4; }
+            .media-link-tooltip-vFinal .copy-icon { cursor: pointer; display: inline-block; transition: transform 0.2s ease, text-shadow 0.2s ease; user-select: none; }
+            .media-link-tooltip-vFinal .copy-icon:hover { transform: scale(1.8); text-shadow: 0 0 6px rgba(255, 255, 255, 0.7), 0 0 12px rgba(52, 152, 219, 0.6); }
+            .media-link-tooltip-vFinal .copy-icon:active { transform: scale(0.5); text-shadow: 0 0 2px rgba(255, 255, 255, 0.5), 0 0 28px rgba(52, 152, 219, 1); }
+            .media-link-tooltip-vFinal .copy-icon.copied { animation: green-flash 1s ease-out forwards; }
             .media-link-tooltip-vFinal .tooltip-content { word-break: break-all; }
             .media-link-tooltip-vFinal .tooltip-filesize { color: #ccc; font-style: italic; margin-left: 8px; white-space: nowrap; }
             .media-modal-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.6); z-index: 100000; display: none; align-items: center; justify-content: center; }
@@ -121,26 +144,101 @@
         const colorizeUrl = (url) => { const rules = [ { regex: /(nsfw)/gi, color: '#e74c3c' }, { regex: /(swf)/gi, color: '#2ecc71' }, { regex: /(pre[_-]?gen)/gi, color: '#2ecc71' }, { regex: /(chat[_-]?generated)/gi, color: '#f1c40f' }, { regex: /(welcome)/gi, color: '#5dade2' }, { regex: /(cover)/gi, color: '#9b59b6' }, { regex: /(person[_-]?models)/gi, color: '#3498db' } ]; let coloredUrl = url.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'); for (const rule of rules) { coloredUrl = coloredUrl.replace(rule.regex, (match) => `<span style="color: ${rule.color}; font-weight: bold;">${match}</span>`); } return coloredUrl; };
         const isElementInViewport = (el) => { if (!el.isConnected) return false; const style = window.getComputedStyle(el); if (style.display === 'none' || style.visibility === 'hidden' || parseFloat(style.opacity) === 0) return false; if (el.offsetWidth < 2 && el.offsetHeight < 2) return false; const rect = el.getBoundingClientRect(); return rect.top < window.innerHeight && rect.bottom > 0 && rect.left < window.innerWidth && rect.right > 0; };
 
-        const refreshPerformanceMap = () => { const performanceEntries = window.performance.getEntriesByType('resource'); performanceMap = new Map(performanceEntries.map(entry => [entry.name, entry])); };
+                const refreshPerformanceMap = () => { const performanceEntries = window.performance.getEntriesByType('resource'); performanceMap = new Map(performanceEntries.map(entry => [entry.name, entry])); };
 
-        const populateAndShowModal = (dataType, title) => {
+        /**
+         * Reliably gets the final, correct data for a media element by loading its
+         * current source into an in-memory object to get its actual dimensions.
+         */
+        const getMediaData = (el) => {
+            return new Promise((resolve) => {
+                const isImg = el.tagName === 'IMG';
+                const src = el.currentSrc || el.src;
+
+                const data = {
+                    src: src,
+                    isImg: isImg,
+                    renderedWidth: el.offsetWidth,
+                    renderedHeight: el.offsetHeight,
+                    naturalWidth: 0,
+                    naturalHeight: 0,
+                };
+
+                if (isImg && src) {
+                    const checker = new Image();
+                    checker.onload = () => {
+                        data.naturalWidth = checker.naturalWidth;
+                        data.naturalHeight = checker.naturalHeight;
+                        resolve(data);
+                    };
+                    checker.onerror = () => {
+                        // On error, resolve with what we have, dimensions will be 0
+                        resolve(data);
+                    };
+                    checker.src = src;
+                } else if (!isImg) { // Handle Video
+                    if (el.readyState >= 1) { // HAVE_METADATA
+                        data.naturalWidth = el.videoWidth;
+                        data.naturalHeight = el.videoHeight;
+                        resolve(data);
+                    } else {
+                        el.addEventListener('loadedmetadata', () => {
+                            data.naturalWidth = el.videoWidth;
+                            data.naturalHeight = el.videoHeight;
+                            resolve(data);
+                        }, { once: true });
+                        el.addEventListener('error', () => resolve(data), { once: true });
+                    }
+                } else {
+                    resolve(data); // No src or not a valid media element
+                }
+            });
+        };
+
+        const populateAndShowModal = async (dataType, title) => {
+            modalTitle.textContent = `Links for: "${title}"`;
+            modalBody.innerHTML = '<p>Анализ медиа и получение точных размеров...</p>';
+            modal.style.display = 'flex';
+
             refreshPerformanceMap();
-            let listHTML = ''; const processedUrls = new Set();
-            const generateListItem = (src, el = null) => {
-                if (!src || processedUrls.has(src)) return '';
-                processedUrls.add(src);
-                const perf = performanceMap.get(src);
+            const elementsToProcess = [];
+
+            // This logic is simplified for clarity; you may need to re-add srcset/preload here if necessary
+            const filters = { isAll: dataType.startsWith('all-'), isViewport: dataType.startsWith('view-'), isHidden: dataType.startsWith('hidden-'), isImg: dataType.includes('img'), isVid: dataType.includes('vid'), isPregen: dataType.includes('pregen') };
+            document.querySelectorAll('img, video').forEach(el => {
+                if (el.closest('[data-userscript-ui="true"]')) return;
+                if (!filters.isAll) {
+                    const inViewport = isElementInViewport(el);
+                    if (filters.isViewport && !inViewport) return;
+                    if (filters.isHidden && inViewport) return;
+                }
+                const elIsImg = el.tagName.toLowerCase() === 'img', elIsVid = !elIsImg, elIsPregen = /pre[_-]gen/i.test(el.src);
+                let match = (filters.isImg && elIsImg) || (filters.isVid && elIsVid);
+                if (match && filters.isPregen && !elIsPregen) match = false;
+                if (match && (el.currentSrc || el.src)) {
+                    elementsToProcess.push(el);
+                }
+            });
+
+            const promises = elementsToProcess.map(el => getMediaData(el));
+            const mediaDataList = await Promise.all(promises);
+
+            let listHTML = '';
+            const processedUrls = new Set();
+            for (const data of mediaDataList) {
+                if (!data.src || processedUrls.has(data.src)) continue;
+                processedUrls.add(data.src);
+
+                const perf = performanceMap.get(data.src);
                 const loadTime = perf?.duration ? `${perf.duration.toFixed(0)} ms` : 'N/A';
-                const isImg = el?.tagName === 'IMG' || dataType.includes('img') || dataType.includes('srcset');
-                const renderedSize = el ? `${el.offsetWidth}x${el.offsetHeight}px` : 'N/A';
-                const intrinsicSize = el ? `${el.naturalWidth || el.videoWidth || 0}x${el.naturalHeight || el.videoHeight || 0}px` : 'N/A';
-                const previewHTML = isImg ? `<img class="media-list-preview" src="${src}" loading="lazy">` : `<div class="media-list-preview video-preview">📹</div>`;
-                return `<div class="media-list-item">${previewHTML}<div class="media-list-details"><div class="media-list-link"><a href="${src}" target="_blank" rel="noopener noreferrer">${src}</a></div><div class="media-list-stats"><span><b>Load Time:</b> ${loadTime}</span><span><b>Rendered:</b> ${renderedSize}</span><span><b>Intrinsic:</b> ${intrinsicSize}</span></div></div></div>`;
-            };
-            if (dataType.startsWith('preload-')) { const assetType = dataType.includes('img') ? 'image' : 'video'; document.querySelectorAll(`link[rel="preload"][as="${assetType}"]`).forEach(linkEl => listHTML += generateListItem(linkEl.href));
-            } else if (dataType.startsWith('srcset-')) { document.querySelectorAll('img[srcset], source[srcset]').forEach(sourceEl => { const srcset = sourceEl.getAttribute('srcset'); if (!srcset) return; srcset.split(',').forEach(part => listHTML += generateListItem(part.trim().split(' ')[0])); });
-            } else { const filters = { isAll: dataType.startsWith('all-'), isViewport: dataType.startsWith('view-'), isHidden: dataType.startsWith('hidden-'), isImg: dataType.includes('img'), isVid: dataType.includes('vid'), isPregen: dataType.includes('pregen') }; document.querySelectorAll('img, video').forEach(el => { if (el.closest('[data-userscript-ui="true"]')) return; if ((el.naturalWidth === 1 && el.naturalHeight === 1)) return; if (!filters.isAll) { const inViewport = isElementInViewport(el); if (filters.isViewport && !inViewport) return; if (filters.isHidden && inViewport) return; } const elIsImg = el.tagName.toLowerCase() === 'img', elIsVid = !elIsImg, elIsPregen = /pre[_-]gen/i.test(el.src); let match = (filters.isImg && elIsImg) || (filters.isVid && elIsVid); if (match && filters.isPregen && !elIsPregen) match = false; if (match) { listHTML += generateListItem(el.dataset.playinlinePreGeneratedSrc || el.currentSrc || el.src, el); } }); }
-            modalTitle.textContent = `Links for: "${title}"`; modalBody.innerHTML = listHTML || '<p>No links found.</p>'; modal.style.display = 'flex';
+                const renderedSize = `${data.renderedWidth}x${data.renderedHeight}px`;
+                const intrinsicSize = (data.naturalWidth > 0) ? `${data.naturalWidth}x${data.naturalHeight}px` : 'N/A';
+                const previewHTML = data.isImg ? `<img class="media-list-preview" src="${data.src}" loading="lazy">` : `<div class="media-list-preview video-preview">📹</div>`;
+
+                listHTML += `<div class="media-list-item">${previewHTML}<div class="media-list-details"><div class="media-list-link"><a href="${data.src}" target="_blank" rel="noopener noreferrer">${data.src}</a></div><div class="media-list-stats"><span><b>Load Time:</b> ${loadTime}</span><span><b>Rendered:</b> ${renderedSize}</span><span><b>Intrinsic:</b> ${intrinsicSize}</span></div></div></div>`;
+            }
+
+            modalBody.innerHTML = listHTML || '<p>No links found.</p>';
         };
 
         const updateMediaCount = () => {
@@ -227,13 +325,37 @@
         const observer = new MutationObserver(debouncedUpdateCount);
         observer.observe(document.body, { childList: true, subtree: true, attributes: true });
         document.addEventListener('scroll', debouncedUpdateCount, { passive: true });
+        window.addEventListener('resize', debouncedUpdateCount, { passive: true }); // FIX: Listen for resize to catch DPR changes
+
         infoPanel.addEventListener('click', (e) => { const actionTarget = e.target.closest('[data-action]'); if (actionTarget) { const action = actionTarget.dataset.action; if (action === 'close') { infoPanel.remove(); } else if (action === 'toggle-collapse') { handleToggleCollapse(actionTarget); } else if (action === 'toggle-tooltip') { handleToggleTooltip(actionTarget); } else if (action === 'unblur-all') { handleUnblurAll(actionTarget); } } else { const counter = e.target.closest('.counter-link'); if (counter) { populateAndShowModal(counter.dataset.type, counter.dataset.title); } } });
         modal.querySelector('.media-modal-close').addEventListener('click', () => modal.style.display = 'none');
         modal.addEventListener('click', (e) => { if (e.target === modal) modal.style.display = 'none'; });
         let hideTooltipTimer = null;
         tooltip.addEventListener('mouseover', () => clearTimeout(hideTooltipTimer));
         tooltip.addEventListener('mouseout', () => { hideTooltipTimer = setTimeout(() => { tooltip.style.display = 'none'; }, 300); });
-        document.addEventListener('mouseover', (e) => { if (!isTooltipEnabled || e.target.closest('[data-userscript-ui="true"]')) return; const container = e.target.closest('[class*="_imageContainer"], [class*="media-container"], [class*="ImageContainer"]'); let imgSrc = '', vidSrc = ''; if (container) { const imageEl = container.querySelector('img'); const videoEl = container.querySelector('video'); if (imageEl) imgSrc = imageEl.currentSrc || imageEl.src; if (videoEl) vidSrc = videoEl.src; } else if (e.target.tagName === 'IMG' || e.target.tagName === 'VIDEO') { const el = e.target; if (el.tagName === 'IMG') imgSrc = el.currentSrc || el.src; if (el.tagName === 'VIDEO') vidSrc = el.currentSrc || el.src; } else if (window.getComputedStyle(e.target).backgroundImage.includes('url')) { imgSrc = window.getComputedStyle(e.target).backgroundImage.match(/url\(['"]?(.*?)['"]?\)/)?.[1] || ''; } if (imgSrc || vidSrc) { let tooltipHTML = ''; if (imgSrc && !imgSrc.startsWith('data:')) { const perf = performanceMap.get(imgSrc); const fileSize = perf?.transferSize ? `${(perf.transferSize / 1024).toFixed(1)} KB` : ''; const fileSizeHTML = fileSize ? `<span class="tooltip-filesize">(${fileSize})</span>` : ''; tooltipHTML += `<div class="tooltip-line"><span class="tooltip-icon">🖼️</span><div class="tooltip-content"><a href="${imgSrc}" target="_blank" rel="noopener noreferrer">${colorizeUrl(imgSrc)}</a>${fileSizeHTML}</div></div>`; } if (vidSrc && !vidSrc.startsWith('data:')) { const perf = performanceMap.get(vidSrc); const fileSize = perf?.transferSize ? `${(perf.transferSize / 1024).toFixed(1)} KB` : ''; const fileSizeHTML = fileSize ? `<span class="tooltip-filesize">(${fileSize})</span>` : ''; tooltipHTML += `<div class="tooltip-line"><span class="tooltip-icon">📹</span><div class="tooltip-content"><a href="${vidSrc}" target="_blank" rel="noopener noreferrer">${colorizeUrl(vidSrc)}</a>${fileSizeHTML}</div></div>`; } if (tooltipHTML) { clearTimeout(hideTooltipTimer); tooltip.innerHTML = tooltipHTML; tooltip.style.display = 'block'; tooltip.style.left = `${e.clientX + 15}px`; tooltip.style.top = `${e.clientY + 15}px`; } } }, { passive: true });
+
+        tooltip.addEventListener('click', (e) => {
+            const copyTarget = e.target.closest('.copy-icon');
+            if (copyTarget && copyTarget.dataset.copyUrl) {
+                navigator.clipboard.writeText(copyTarget.dataset.copyUrl).then(() => {
+                    // Prevent re-triggering animation if already running
+                    if (copyTarget.classList.contains('copied')) return;
+
+                    copyTarget.classList.add('copied');
+                    setTimeout(() => {
+                        copyTarget.classList.remove('copied');
+                        // Reset animation property to allow it to run again
+                        copyTarget.style.animation = 'none';
+                        void copyTarget.offsetWidth; // Trigger reflow
+                        copyTarget.style.animation = '';
+                    }, 600);
+                }).catch(err => {
+                    console.error('Failed to copy URL: ', err);
+                });
+            }
+        });
+
+        document.addEventListener('mouseover', (e) => { if (!isTooltipEnabled || e.target.closest('[data-userscript-ui="true"]')) return; const container = e.target.closest('[class*="_imageContainer"], [class*="media-container"], [class*="ImageContainer"]'); let imgSrc = '', vidSrc = ''; if (container) { const imageEl = container.querySelector('img'); const videoEl = container.querySelector('video'); if (imageEl) imgSrc = imageEl.currentSrc || imageEl.src; if (videoEl) vidSrc = videoEl.src; } else if (e.target.tagName === 'IMG' || e.target.tagName === 'VIDEO') { const el = e.target; if (el.tagName === 'IMG') imgSrc = el.currentSrc || el.src; if (el.tagName === 'VIDEO') vidSrc = el.currentSrc || el.src; } else if (window.getComputedStyle(e.target).backgroundImage.includes('url')) { imgSrc = window.getComputedStyle(e.target).backgroundImage.match(/url\(['"]?(.*?)['"]?\)/)?.[1] || ''; } if (imgSrc || vidSrc) { let tooltipHTML = ''; if (imgSrc && !imgSrc.startsWith('data:')) { const perf = performanceMap.get(imgSrc); const fileSize = perf?.transferSize ? `${(perf.transferSize / 1024).toFixed(1)} KB` : ''; const fileSizeHTML = fileSize ? `<span class="tooltip-filesize">(${fileSize})</span>` : ''; tooltipHTML += `<div class="tooltip-line"><span class="tooltip-icon copy-icon" data-copy-url="${imgSrc}" title="Copy URL">🖼️</span><div class="tooltip-content"><a href="${imgSrc}" target="_blank" rel="noopener noreferrer">${colorizeUrl(imgSrc)}</a>${fileSizeHTML}</div></div>`; } if (vidSrc && !vidSrc.startsWith('data:')) { const perf = performanceMap.get(vidSrc); const fileSize = perf?.transferSize ? `${(perf.transferSize / 1024).toFixed(1)} KB` : ''; const fileSizeHTML = fileSize ? `<span class="tooltip-filesize">(${fileSize})</span>` : ''; tooltipHTML += `<div class="tooltip-line"><span class="tooltip-icon copy-icon" data-copy-url="${vidSrc}" title="Copy URL">📹</span><div class="tooltip-content"><a href="${vidSrc}" target="_blank" rel="noopener noreferrer">${colorizeUrl(vidSrc)}</a>${fileSizeHTML}</div></div>`; } if (tooltipHTML) { clearTimeout(hideTooltipTimer); tooltip.innerHTML = tooltipHTML; tooltip.style.display = 'block'; tooltip.style.left = `${e.clientX + 15}px`; tooltip.style.top = `${e.clientY + 15}px`; } } }, { passive: true });
         document.addEventListener('mouseout', (e) => { if (!isTooltipEnabled) return; if (e.target.closest('[class*="_imageContainer"], [class*="media-container"], [class*="ImageContainer"]') || e.target.tagName === 'IMG' || e.target.tagName === 'VIDEO') { hideTooltipTimer = setTimeout(() => { tooltip.style.display = 'none'; }, 300); } }, { passive: true });
 
         const tooltipToggleButton = infoPanel.querySelector('[data-action="toggle-tooltip"]');
