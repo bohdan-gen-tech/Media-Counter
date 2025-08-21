@@ -2,7 +2,7 @@
 // @name         Media Counter
 // @namespace    http://tampermonkey.net/
 // @version      2025.08.22
-// @description  Fixed dimensions according to DPR value. Added copy URL button by clicking on media emoji of tooltip
+// @description  Fixed dimensions according to DPR value. Added copy URL button by clicking on media emoji of tooltip. Won't run in iframe.
 // @author       Bohdan S.
 // @match        *://*/*
 // @icon         https://cdn-icons-png.flaticon.com/256/15271/15271482.png
